@@ -5,7 +5,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from .config import Settings
+from .config import Settings, build_settings
 from .pipeline import run, write_outputs
 from .vision import OllamaVision, VisionError
 
@@ -29,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--no-vision", action="store_true", help="Metrics only, no model")
     analyze.add_argument("--no-singles", action="store_true", help="Do not send single photos to the model")
     analyze.add_argument("--shortlist", type=int)
+    analyze.add_argument("--recursive", action="store_true", help="Include subfolders")
+    analyze.add_argument("--exclude", action="append", default=[], metavar="PATTERN",
+                         help="Skip files matching a pattern such as '*draft*' (repeatable)")
+    analyze.add_argument("--kinds", help="Comma list: jpeg,png,webp,raw")
+    analyze.add_argument("--criteria", help="Comma list: sharpness,exposure,eyes,focus,expression")
 
     sub.add_parser("check", help="Check that Ollama and the model are available")
     return parser
@@ -47,15 +52,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"OK: Ollama reachable and model '{settings.model}' installed.")
         return 0
 
+    options: dict = {"recursive": args.recursive or None, "exclude": args.exclude or None}
     if args.model:
-        settings = replace(settings, model=args.model)
+        options["model"] = args.model
     if args.shortlist:
-        settings = replace(settings, shortlist_size=args.shortlist)
+        options["shortlist_size"] = args.shortlist
+    if args.kinds:
+        options["kinds"] = args.kinds.split(",")
+    if args.criteria:
+        options["criteria"] = args.criteria.split(",")
+    try:
+        settings = build_settings(settings, {k: v for k, v in options.items() if v is not None})
+    except ValueError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
     if args.no_singles:
         settings = replace(settings, vision_singles=False)
 
     vision = None
-    if not args.no_vision:
+    if not args.no_vision and settings.uses_model():
         vision = OllamaVision(settings)
         try:
             vision.check()
