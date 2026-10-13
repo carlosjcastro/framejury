@@ -84,19 +84,21 @@ def _flags(
     settings: Settings,
 ) -> list[str]:
     flags: list[str] = []
-    if in_group and relative_sharpness < settings.soft_ratio:
+    criteria = settings.criteria
+    if "sharpness" in criteria and in_group and relative_sharpness < settings.soft_ratio:
         flags.append("soft")
     if observation:
-        if observation.closed_eyes > 0:
+        if "eyes" in criteria and observation.closed_eyes > 0:
             flags.append("closed_eyes")
-        if observation.subject_focus <= 2:
+        if "focus" in criteria and observation.subject_focus <= 2:
             flags.append("out_of_focus")
-        if observation.expression <= 2:
+        if "expression" in criteria and observation.expression <= 2:
             flags.append("awkward_expression")
-    if info.clipped_high > settings.clipped_high_limit:
-        flags.append("overexposed")
-    if info.clipped_low > settings.clipped_low_limit:
-        flags.append("underexposed")
+    if "exposure" in criteria:
+        if info.clipped_high > settings.clipped_high_limit:
+            flags.append("overexposed")
+        if info.clipped_low > settings.clipped_low_limit:
+            flags.append("underexposed")
     return flags
 
 
@@ -105,13 +107,18 @@ def _score(
     observation: Observation | None,
     flags: list[str],
     voted: bool,
+    criteria: frozenset | set | None = None,
 ) -> float:
-    score = relative_sharpness * SHARPNESS_WEIGHT
-    if observation:
+    criteria = criteria if criteria is not None else {"sharpness", "focus", "expression"}
+    score = (relative_sharpness if "sharpness" in criteria else 1.0) * SHARPNESS_WEIGHT
+    if observation and "focus" in criteria:
         score += observation.subject_focus / 5.0 * FOCUS_WEIGHT
+    else:
+        score += FOCUS_WEIGHT * 0.8
+    if observation and "expression" in criteria:
         score += observation.expression / 5.0 * EXPRESSION_WEIGHT
     else:
-        score += FOCUS_WEIGHT * 0.8 + EXPRESSION_WEIGHT * 0.8
+        score += EXPRESSION_WEIGHT * 0.8
     if voted:
         score += MODEL_VOTE_BONUS
     for flag in flags:
@@ -152,7 +159,7 @@ def decide(
             )
             continue
         flags = _flags(info, observation, relative, in_group, settings)
-        score = _score(relative, observation, flags, info.name == model_best)
+        score = _score(relative, observation, flags, info.name == model_best, settings.criteria)
         scored.append(
             PhotoDecision(
                 info.name, info.path, "keep", "", flags, score,
@@ -188,7 +195,7 @@ def decide(
         relative = photo.sharpness / top
         if photo.flags:
             photo.reason = _labels(photo.flags, lang)
-        elif relative < 0.95:
+        elif relative < 0.95 and "sharpness" in settings.criteria:
             photo.reason = text["lost_sharpness"].format(keeper=keeper.name, ratio=relative)
         else:
             photo.reason = text["lower"].format(keeper=keeper.name)
