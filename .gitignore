@@ -1,0 +1,45 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Datos generados por Framejury
+backend/data/
+backend/salida*/
+backend/keeper_out/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Fotos de prueba (nunca subir fotos de clientes)
+fotos/
+*.jpg
+*.jpeg
+*.png
+*.webp
+!frontend/public/**
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
