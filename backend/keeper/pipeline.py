@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import __version__
-from .config import IMAGE_EXTENSIONS, RAW_EXTENSIONS, Settings
+from .config import FILE_KINDS, RAW_EXTENSIONS, Settings
 from .decision import GroupDecision, decide
 from .grouping import group_photos
 from .metrics import PhotoInfo, analyze_file
@@ -17,39 +18,70 @@ from .vision import Observation, Verdict, Vision, VisionError
 Progress = Callable[[str, int, int], None]
 
 
-def scan_folder(folder: str | Path) -> list[Path]:
+def _excluded(relative: str, patterns: tuple[str, ...]) -> bool:
+    lowered = relative.lower()
+    base = lowered.rsplit("/", 1)[-1]
+    return any(
+        fnmatch.fnmatch(lowered, pattern.lower()) or fnmatch.fnmatch(base, pattern.lower())
+        for pattern in patterns
+    )
+
+
+def scan_folder(folder: str | Path, settings: Settings | None = None) -> list[tuple[Path, str]]:
+    """Return (path, relative_name) pairs. Names use forward slashes so they are stable across systems."""
+    settings = settings or Settings()
     root = Path(folder)
     if not root.is_dir():
         raise FileNotFoundError(f"Folder not found: {root}")
-    files = [p for p in root.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
-    raw_stems = {p.stem.lower() for p in files if p.suffix.lower() in RAW_EXTENSIONS}
+    allowed = settings.extensions()
+    walker = root.rglob("*") if settings.recursive else root.iterdir()
+    files = []
+    for path in walker:
+        if not path.is_file() or path.suffix.lower() not in allowed:
+            continue
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
+        relative = path.relative_to(root).as_posix()
+        if _excluded(relative, settings.exclude):
+            continue
+        files.append((path, relative))
+    raw_stems = {(p.parent, p.stem.lower()) for p, _ in files if p.suffix.lower() in RAW_EXTENSIONS}
     primary = [
-        p for p in files
-        if p.suffix.lower() in RAW_EXTENSIONS or p.stem.lower() not in raw_stems
+        (p, rel) for p, rel in files
+        if p.suffix.lower() in RAW_EXTENSIONS or (p.parent, p.stem.lower()) not in raw_stems
     ]
-    return sorted(primary)
+    return sorted(primary, key=lambda item: item[1].lower())
 
 
-def _analyze_all(paths: list[Path], progress: Progress | None) -> tuple[list[PhotoInfo], list[dict]]:
+def kind_of(path: Path) -> str:
+    suffix = path.suffix.lower()
+    for kind, extensions in FILE_KINDS.items():
+        if suffix in extensions:
+            return kind
+    return "other"
+
+
+def _analyze_all(items: list[tuple[Path, str]], progress: Progress | None) -> tuple[list[PhotoInfo], list[dict]]:
     infos: list[PhotoInfo] = []
     skipped: list[dict] = []
 
-    def work(path: Path):
+    def work(item: tuple[Path, str]):
+        path, name = item
         try:
-            return analyze_file(path), None
+            return analyze_file(path, name), None
         except Exception as error:  # unreadable or corrupt file
-            return None, {"name": path.name, "error": str(error)}
+            return None, {"name": name, "error": str(error)}
 
     done = 0
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for info, error in pool.map(work, paths):
+        for info, error in pool.map(work, items):
             done += 1
             if info:
                 infos.append(info)
             else:
                 skipped.append(error)
             if progress:
-                progress("analyze", done, len(paths))
+                progress("analyze", done, len(items))
     return infos, skipped
 
 
@@ -106,14 +138,26 @@ def run(
     lang: str = "en",
     progress: Progress | None = None,
     note: Callable[[str], None] | None = None,
+    only: list[str] | None = None,
+    single_group: bool = False,
 ) -> dict:
     started = time.perf_counter()
     if note:
         note("Measuring sharpness, exposure and capture time")
-    paths = scan_folder(folder)
-    infos, skipped = _analyze_all(paths, progress)
+    items = scan_folder(folder, settings)
+    if only is not None:
+        wanted = set(only)
+        items = [item for item in items if item[1] in wanted]
+        if not items:
+            raise ValueError("None of the selected photos were found with the current filters")
+    infos, skipped = _analyze_all(items, progress)
     info_by_name = {i.name: i for i in infos}
-    groups = group_photos(infos, settings.group_gap_seconds, settings.group_hash_distance)
+    if single_group and infos:
+        groups = [sorted(infos, key=lambda p: (p.taken_at, p.name))]
+    else:
+        groups = group_photos(infos, settings.group_gap_seconds, settings.group_hash_distance)
+    if vision is not None and not settings.uses_model():
+        vision = None
 
     results: list[GroupDecision] = []
     model_calls = 0
@@ -171,6 +215,18 @@ def run(
         "folder": str(Path(folder).resolve()),
         "model": settings.model if vision else None,
         "lang": lang,
+        "options": {
+            "recursive": settings.recursive,
+            "kinds": sorted(settings.kinds),
+            "criteria": sorted(settings.criteria),
+            "exclude": list(settings.exclude),
+            "compared_selection": single_group,
+            "selected_only": only is not None,
+            "group_gap_seconds": settings.group_gap_seconds,
+            "group_hash_distance": settings.group_hash_distance,
+            "shortlist_size": settings.shortlist_size,
+            "soft_ratio": settings.soft_ratio,
+        },
         "stats": {
             "photos": len(infos),
             "groups": len(groups),
