@@ -140,6 +140,28 @@ class OllamaVision:
         wanted = self.settings.model
         if wanted not in names and f"{wanted}:latest" not in names:
             raise VisionError(f"Model '{wanted}' is not installed. Run: ollama pull {wanted}")
+        
+        
+    def models(self) -> list[dict]:
+        """Installed models with their capabilities, vision-capable ones flagged."""
+        try:
+            response = self.client.get(f"{self.settings.ollama_url}/api/tags")
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise VisionError(f"Cannot reach Ollama at {self.settings.ollama_url}. ({error})") from error
+        found = []
+        for model in response.json().get("models", []):
+            name = model.get("name", "")
+            vision = None
+            try:
+                shown = self.client.post(f"{self.settings.ollama_url}/api/show", json={"model": name})
+                shown.raise_for_status()
+                vision = "vision" in shown.json().get("capabilities", [])
+            except (httpx.HTTPError, ValueError):
+                pass
+            found.append({"name": name, "vision": vision})
+        return sorted(found, key=lambda m: (m["vision"] is not True, m["name"]))
+    
 
     def judge(self, paths: list[str], lang: str) -> Verdict:
         images = [encode_image(path, self.settings.vision_max_side) for path in paths]
