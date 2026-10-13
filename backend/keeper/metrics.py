@@ -127,14 +127,14 @@ def hamming(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def analyze_file(path: str | Path) -> PhotoInfo:
+def analyze_file(path: str | Path, name: str | None = None) -> PhotoInfo:
     path = Path(path)
     image = load_rgb(path)
     brightness, clipped_high, clipped_low = exposure(image)
     taken_at, has_exif_time = read_capture_time(path)
     return PhotoInfo(
         path=str(path),
-        name=path.name,
+        name=name or path.name,
         taken_at=taken_at,
         width=image.width,
         height=image.height,
