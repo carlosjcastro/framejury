@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Footer } from "@/components/Footer";
 import { MotionSwitch } from "@/components/MotionSwitch";
 import { MOTION_BOOT_SCRIPT } from "@/lib/motion";
 import "./globals.css";
@@ -36,11 +37,11 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT_SCRIPT }} />
       </head>
-      <body>
+      <body className="flex min-h-dvh flex-col">
         <a href="#content" className="skip-link">
           Skip to content
         </a>
-        <header className="border-b border-line">
+        <header className="border-b border-line print:hidden">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
             <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
               <svg
@@ -69,7 +70,10 @@ export default function RootLayout({
             </div>
           </div>
         </header>
-        <div id="content">{children}</div>
+        <div id="content" className="flex-1">
+          {children}
+        </div>
+        <Footer />
       </body>
     </html>
   );
