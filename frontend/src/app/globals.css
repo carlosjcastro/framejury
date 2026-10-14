@@ -281,36 +281,44 @@ body {
   animation: fade-in 0.4s ease-out both;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .spin,
-  .scanline,
-  .dot-wave > span,
-  .fade-in {
-    animation: none !important;
-  }
-  .bar::after {
-    animation: none !important;
-    display: none;
-  }
-  .dot-wave > span {
-    opacity: 1;
-  }
+.skeleton {
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--overlay) 25%,
+    var(--raised) 50%,
+    var(--overlay) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal,
-  .pulse-dot,
-  .caret {
-    animation: none !important;
+  :root:not([data-motion="on"]) *,
+  :root:not([data-motion="on"]) *::before,
+  :root:not([data-motion="on"]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-  .draw {
-    animation: none !important;
-    stroke-dashoffset: 0;
-  }
-  .shimmer {
+  :root:not([data-motion="on"]) .shimmer {
     animation: none !important;
     background: none;
     color: var(--ink);
+  }
+  :root:not([data-motion="on"]) .skeleton {
+    animation: none !important;
+    background: var(--overlay);
+  }
+  :root:not([data-motion="on"]) .draw {
+    stroke-dashoffset: 0;
+  }
+  :root:not([data-motion="on"]) .bar::after {
+    display: none;
+  }
+  :root:not([data-motion="on"]) .dot-wave > span {
+    opacity: 1;
   }
 }
 
@@ -339,26 +347,4 @@ body {
   section {
     break-inside: avoid;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-
-.skeleton {
-  border-radius: 4px;
-  background: linear-gradient(90deg, var(--overlay) 25%, var(--raised) 50%, var(--overlay) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.6s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none !important; }
 }
