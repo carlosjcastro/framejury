@@ -92,6 +92,7 @@ export interface Job {
   vision?: boolean;
   folder?: string;
   selected?: number | null;
+  summary?: Summary;
 }
 
 export interface FolderExportResult {
@@ -250,4 +251,8 @@ export function setManyStatus(jobId: string, names: string[], status: Status) {
     method: "POST",
     body: JSON.stringify({ names, status }),
   });
+}
+
+export function createSummary(jobId: string) {
+  return request<Summary>(`/jobs/${jobId}/summary`, { method: "POST" });
 }
