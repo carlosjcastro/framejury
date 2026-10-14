@@ -350,3 +350,15 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+
+.skeleton {
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--overlay) 25%, var(--raised) 50%, var(--overlay) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none !important; }
+}
