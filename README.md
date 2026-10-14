@@ -132,4 +132,42 @@ Your originals are treated as read only, since the analysis never changes them, 
 
 The language model is limited by design, because it has no access to your files, to tools or to the network and it can only answer with a fixed structure of observations, while plain rules turn those observations into decisions and the model's own vote adds only a small bonus to a score. A photo that contains misleading text could still try to confuse the model, but the harm it can do is bounded to a slightly different ranking inside one group, which you can see and change. The closing note is checked against the facts of the report, and if the model mentions a file or a number that is not in the results, Framejury discards the note and writes a plain one from a template instead.
 
-Some limits are worth knowing about, and the first one is that there is no login, because the tool is meant for a
+Some limits are worth knowing about, and the first one is that there is no login, because the tool is meant for a single trusted user, so anyone who can run commands on your computer can use the engine, and for that reason you should not expose port 8000 to a network or start the engine with a host other than `127.0.0.1`. Reports are stored as plain files in the `data` folder next to the engine and contain the paths and file names of your photos, so you should delete the files in that folder when a job is finished and keep that folder out of version control. Finally, the model can be wrong, so you should treat its observations as a strong hint and use the Review label as an invitation to look closely.
+
+## Troubleshooting
+
+If the page says that Framejury can't reach its engine, the backend is not running, so you should start it with the command in the running section and press Check again.
+
+If the page says that Ollama isn't running, you can open the Ollama app or run `ollama serve`, and in the meantime you can choose to analyze without the model while you sort it out.
+
+If the page says that the model isn't downloaded, you should run `ollama pull gemma4:e4b-it-qat` and check again.
+
+If the page says that no photos were found, you should confirm the path and make sure that the file types and the subfolder setting in the advanced options match what is on disk.
+
+If a few files are reported as unreadable, they are probably damaged or in a format that is not supported, and they are left out of the results while the list shows which ones they are.
+
+If PowerShell refuses to activate the virtual environment because scripts are disabled, you can run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try the activation again.
+
+If the analysis feels slow, keep in mind that comparing photos with a local model depends heavily on your graphics card and on the number of groups, and that lowering the number of candidates per group or turning the vision model off will make it faster.
+
+## Honest limits
+
+Framejury sees the world through a small local model and it has the weaknesses of one, since detecting closed eyes is harder when people wear glasses, turn their head or appear small in the frame, and the judgment of expressions is subjective. For RAW files Framejury reads the embedded preview image instead of developing the file, so its measurements describe the preview and not the full sensor data, and groups with many nearly identical frames depend on the time and similarity settings, which you may need to adjust for fast bursts or slow events.
+
+For these reasons Framejury is a first pass and not a final editor, and it is at its best when it removes the clear failures quickly and leaves the difficult choices to you with all the evidence in front of you.
+
+## Project structure
+
+The repository has two folders, the `backend` folder, which holds the Python package called `framejury` with the analysis pipeline, the decision rules, the Ollama client, the exports and the API together with their tests, and the `frontend` folder, which holds the Next.js interface with its pages, its components and the small library that talks to the API.
+
+The tests for the engine run with `python -m pytest` from the backend folder and they use a simulated Ollama connection, so they do not need the model to be installed, while the interface can be checked with `npm run lint` and `npx tsc --noEmit` from the frontend folder.
+
+## Built with
+
+The interface uses Next.js, React, TypeScript and Tailwind CSS, the engine uses Python, FastAPI, Uvicorn, OpenCV, Pillow, NumPy and rawpy, and the judgment step uses Gemma 4 served locally by Ollama, which is released under the Apache 2.0 license according to its model card.
+
+Framejury was built for the DEV Hacktoberfest Open Source AI Challenge, in the Side Hustle week.
+
+## License
+
+Framejury is released under the MIT License, which you can read in the `LICENSE` file, and the models that you run through Ollama keep their own licenses.
