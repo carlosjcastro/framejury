@@ -202,6 +202,101 @@ body {
   animation: draw 0.35s ease-out forwards;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+.bar {
+  position: relative;
+  overflow: hidden;
+}
+.bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  animation: sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes scanline {
+  0%,
+  100% {
+    top: 8%;
+  }
+  50% {
+    top: 86%;
+  }
+}
+.scanline {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px 1px var(--accent);
+  animation: scanline 2.4s ease-in-out infinite;
+}
+
+@keyframes dot-wave {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.dot-wave > span {
+  animation: dot-wave 1.2s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .scanline,
+  .dot-wave > span,
+  .fade-in {
+    animation: none !important;
+  }
+  .bar::after {
+    animation: none !important;
+    display: none;
+  }
+  .dot-wave > span {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal,
   .pulse-dot,
