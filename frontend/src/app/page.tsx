@@ -8,6 +8,7 @@ import { ImpactStrip } from "@/components/ImpactStrip";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { ReasoningPanel } from "@/components/ReasoningPanel";
 import { StatusIcon } from "@/components/StatusChip";
+import { DebriefPanel } from "@/components/DebriefPanel";
 import {
   createJob,
   getConfig,
@@ -353,6 +354,8 @@ export default function Home() {
             <p className="text-muted">No photos match this filter.</p>
           )}
         </div>
+
+        <DebriefPanel jobId={job.id} saved={job.summary} model={report.model} />
 
         {picked.size > 0 && (
           <div
