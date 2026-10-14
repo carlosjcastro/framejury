@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Job } from "@/lib/api";
+import { prefersReducedMotion } from "@/lib/motion";
 
 type State = "done" | "active" | "pending";
 
@@ -96,7 +97,7 @@ function Typed({ text }: { text: string }) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (prefersReducedMotion()) {
       const timer = setTimeout(() => setCount(text.length), 0);
       return () => clearTimeout(timer);
     }
