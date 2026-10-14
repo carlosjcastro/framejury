@@ -73,3 +73,44 @@ def test_summary_without_model_uses_template_and_is_saved(client, tmp_path):
     result = client.post(f"/jobs/{job['id']}/summary")
     assert result.status_code == 200 and result.json()["source"] == "template"
     assert client.get(f"/jobs/{job['id']}").json()["summary"]["source"] == "template"
+
+
+def test_problems_carry_a_code_the_interface_can_explain(client, tmp_path, monkeypatch):
+    from keeper import api
+    from keeper.vision import VisionError
+
+    missing = client.post("/jobs", json={"folder": str(tmp_path / "nope")})
+    assert missing.status_code == 400
+    assert missing.json()["detail"]["code"] == "folder_missing"
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    none = client.post("/jobs", json={"folder": str(empty), "vision": False})
+    assert none.status_code == 400
+    assert none.json()["detail"]["code"] == "no_photos"
+
+    save(make_scene(30), tmp_path, "a.jpg")
+
+    class Down:
+        def __init__(self, settings):
+            pass
+
+        def check(self):
+            raise VisionError("Cannot reach Ollama", code="ollama_down")
+
+        def models(self):
+            raise VisionError("Cannot reach Ollama", code="ollama_down")
+
+    monkeypatch.setattr(api, "OllamaVision", Down)
+    job = client.post("/jobs", json={"folder": str(tmp_path)})
+    assert job.status_code == 503
+    assert job.json()["detail"]["code"] == "ollama_down"
+    assert client.get("/models").json()["detail"]["code"] == "ollama_down"
+
+    class NoModel(Down):
+        def check(self):
+            raise VisionError("Model 'x' is not installed", code="model_missing", model="x")
+
+    monkeypatch.setattr(api, "OllamaVision", NoModel)
+    detail = client.post("/jobs", json={"folder": str(tmp_path)}).json()["detail"]
+    assert detail["code"] == "model_missing" and detail["model"] == "x"
