@@ -23,12 +23,16 @@ export function GroupCard({
   index,
   eager,
   onChange,
+  picked,
+  onPick,
 }: {
   jobId: string;
   group: Group;
   index: number;
   eager: boolean;
   onChange: (name: string, status: Status) => void;
+  picked: Set<string>;
+  onPick: (name: string) => void;
 }) {
   const count = group.photos.length;
   const titleId = `group-${group.id}`;
@@ -73,6 +77,7 @@ export function GroupCard({
                 >
                   <Corners status={photo.status} />
                   <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={thumbUrl(jobId, photo.name)}
                       alt={`Preview of ${photo.name}`}
@@ -86,6 +91,15 @@ export function GroupCard({
                     <div className="absolute left-2 top-2">
                       <StatusChip status={photo.status} />
                     </div>
+                    <label className="absolute right-1 top-1 flex size-11 cursor-pointer items-center justify-center print:hidden">
+                      <input
+                        type="checkbox"
+                        checked={picked.has(photo.name)}
+                        onChange={() => onPick(photo.name)}
+                        aria-label={`Select ${photo.name}`}
+                        className="size-5 accent-[var(--accent)]"
+                      />
+                    </label>
                   </div>
                 </div>
 
