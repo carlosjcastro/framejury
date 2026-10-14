@@ -75,3 +75,21 @@ def test_validate_rejects_malformed_and_overlong():
     facts = build_facts(make_report())
     assert validate({"summary": "x"}, facts) is None
     assert validate({**GOOD, "summary": "a" * 800}, facts) is None
+    
+
+def test_suggestions_come_from_the_data_and_feed_the_fallback():
+    report = make_report()
+    report["groups"].append(
+        {"id": 2, "needs_review": True, "photos": [
+            {"name": "d.jpg", "status": "review", "reason": "Only shot, defects", "manual": False, "flags": ["overexposed"]}
+        ]}
+    )
+    facts = build_facts(report)
+    assert facts["suggestion_ids"] == ["single_defects", "close_calls"]
+    assert "Compare as one group" in facts["suggestions"][1]
+    assert "segundo cuadro" in summarize(report, None, "es")["tip"]
+
+
+def test_prompt_hides_internal_ids():
+    from keeper.summary import build_prompt
+    assert "suggestion_ids" not in build_prompt(build_facts(make_report()), "en")
