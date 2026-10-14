@@ -18,14 +18,14 @@ def _progress(stage: str, done: int, total: int) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="keeper", description="Local photo culling that explains its decisions.")
+    parser = argparse.ArgumentParser(prog="framejury", description="Local photo culling that explains its decisions.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     analyze = sub.add_parser("analyze", help="Analyze a folder of photos")
     analyze.add_argument("folder")
     analyze.add_argument("--model")
     analyze.add_argument("--lang", choices=["en", "es"], default="en")
-    analyze.add_argument("--out", default="keeper_out")
+    analyze.add_argument("--out", default="framejury_out")
     analyze.add_argument("--no-vision", action="store_true", help="Metrics only, no model")
     analyze.add_argument("--no-singles", action="store_true", help="Do not send single photos to the model")
     analyze.add_argument("--shortlist", type=int)

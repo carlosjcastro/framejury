@@ -7,8 +7,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -20,6 +22,8 @@ from .summary import summarize
 from .vision import OllamaVision, VisionError
 
 ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 DATA_DIR = Path("data")
 SCAN_LIMIT = 5000
 JOB_LIST_LIMIT = 50
@@ -44,6 +48,25 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Framejury API", version=__version__, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def refuse_foreign_origins(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if origin and origin not in ALLOWED_ORIGINS and request.method not in SAFE_METHODS:
+        return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
+    return await call_next(request)
+
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

@@ -6,17 +6,17 @@ from PIL import ImageFilter
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
-from tests.test_keeper import make_scene, save  # noqa: E402
+from tests.test_framejury import make_scene, save  # noqa: E402
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    from keeper import api
+    from framejury import api
 
     monkeypatch.setattr(api, "DATA_DIR", tmp_path / "data")
     (tmp_path / "data").mkdir()
     api.JOBS.clear()
-    return TestClient(api.app)
+    return TestClient(api.app, base_url="http://localhost")
 
 
 def wait(client, job_id):
@@ -76,8 +76,8 @@ def test_summary_without_model_uses_template_and_is_saved(client, tmp_path):
 
 
 def test_problems_carry_a_code_the_interface_can_explain(client, tmp_path, monkeypatch):
-    from keeper import api
-    from keeper.vision import VisionError
+    from framejury import api
+    from framejury.vision import VisionError
 
     missing = client.post("/jobs", json={"folder": str(tmp_path / "nope")})
     assert missing.status_code == 400
@@ -114,3 +114,17 @@ def test_problems_carry_a_code_the_interface_can_explain(client, tmp_path, monke
     monkeypatch.setattr(api, "OllamaVision", NoModel)
     detail = client.post("/jobs", json={"folder": str(tmp_path)}).json()["detail"]
     assert detail["code"] == "model_missing" and detail["model"] == "x"
+
+
+def test_requests_with_a_foreign_host_are_refused(client):
+    assert client.get("/health").status_code == 200
+    assert client.get("/health", headers={"host": "evil.example"}).status_code == 400
+
+
+def test_changes_from_a_foreign_origin_are_refused(client, tmp_path):
+    body = {"folder": str(tmp_path), "vision": False}
+    foreign = client.post("/jobs", json=body, headers={"origin": "https://evil.example"})
+    assert foreign.status_code == 403
+    assert client.get("/health", headers={"origin": "https://evil.example"}).status_code == 200
+    own = client.post("/jobs", json=body, headers={"origin": "http://localhost:3000"})
+    assert own.status_code != 403

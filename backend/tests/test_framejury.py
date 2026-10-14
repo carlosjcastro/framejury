@@ -5,11 +5,11 @@ import numpy as np
 import pytest
 from PIL import Image, ImageFilter
 
-from keeper.config import Settings, build_settings
-from keeper.grouping import group_photos
-from keeper.metrics import analyze_file, sharpness
-from keeper.pipeline import run, scan_folder, write_outputs
-from keeper.vision import Observation, OllamaVision, Verdict, VisionError, parse_response
+from framejury.config import Settings, build_settings
+from framejury.grouping import group_photos
+from framejury.metrics import analyze_file, sharpness
+from framejury.pipeline import run, scan_folder, write_outputs
+from framejury.vision import Observation, OllamaVision, Verdict, VisionError, parse_response
 
 
 def make_scene(seed=0, size=(640, 480)):
@@ -63,7 +63,7 @@ class FakeVision:
 
 
 def test_sharper_photo_beats_model_vote_when_gap_is_real():
-    from keeper.decision import _score
+    from framejury.decision import _score
     sharp = _score(1.0, Observation(1, 0, 4, 4, ""), [], False)
     voted = _score(0.8125, Observation(1, 0, 4, 5, ""), [], True)
     assert sharp > voted
@@ -207,7 +207,7 @@ def sample_report(tmp_path):
 
 
 def test_csv_export(tmp_path):
-    from keeper.export import to_csv
+    from framejury.export import to_csv
     import csv as csvmod, io as iomod
     report = sample_report(tmp_path)
     rows = list(csvmod.DictReader(iomod.StringIO(to_csv(report))))
@@ -216,7 +216,7 @@ def test_csv_export(tmp_path):
 
 
 def test_folder_export_copies_companions_and_never_moves(tmp_path):
-    from keeper.export import export_folders
+    from framejury.export import export_folders
     src = tmp_path / "src"
     src.mkdir()
     report = sample_report(src)
@@ -233,7 +233,7 @@ def test_folder_export_copies_companions_and_never_moves(tmp_path):
 
 def test_xmp_is_valid_and_never_overwrites(tmp_path):
     import xml.etree.ElementTree as ET
-    from keeper.export import write_xmp
+    from framejury.export import write_xmp
     report = sample_report(tmp_path)
     result = write_xmp(report)
     assert result["written"] == 1 and result["skipped_existing"] == 1
@@ -245,7 +245,7 @@ def test_xmp_is_valid_and_never_overwrites(tmp_path):
 
 
 def test_raw_preferred_over_same_stem_jpeg_and_loaded_via_preview(tmp_path, monkeypatch):
-    from keeper import metrics
+    from framejury import metrics
     save(make_scene(6), tmp_path, "img1.jpg", 1000)
     (tmp_path / "img1.nef").write_bytes(b"raw")
     save(make_scene(7), tmp_path, "img2.jpg", 2000)
@@ -257,7 +257,7 @@ def test_raw_preferred_over_same_stem_jpeg_and_loaded_via_preview(tmp_path, monk
 
 def test_raw_preview_orientation_with_fake_rawpy(tmp_path, monkeypatch):
     import io as iomod, sys, types
-    from keeper import metrics
+    from framejury import metrics
 
     landscape = Image.new("RGB", (60, 40), "red")
     data = iomod.BytesIO()

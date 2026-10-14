@@ -1,5 +1,5 @@
-from keeper.summary import build_facts, summarize, validate
-from keeper.vision import VisionError
+from framejury.summary import build_facts, summarize, validate
+from framejury.vision import VisionError
 
 
 def make_report():
@@ -91,5 +91,5 @@ def test_suggestions_come_from_the_data_and_feed_the_fallback():
 
 
 def test_prompt_hides_internal_ids():
-    from keeper.summary import build_prompt
+    from framejury.summary import build_prompt
     assert "suggestion_ids" not in build_prompt(build_facts(make_report()), "en")
