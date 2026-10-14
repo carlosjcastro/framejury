@@ -40,7 +40,12 @@ SCHEMA = {
 
 
 class VisionError(RuntimeError):
-    pass
+    """A model problem. `code` lets the interface explain it and say what to do."""
+
+    def __init__(self, message: str, code: str = "model_error", model: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.model = model
 
 
 @dataclass
@@ -135,13 +140,18 @@ class OllamaVision:
             response = self.client.get(f"{self.settings.ollama_url}/api/tags")
             response.raise_for_status()
         except httpx.HTTPError as error:
-            raise VisionError(
-                f"Cannot reach Ollama at {self.settings.ollama_url}. Is it running? ({error})"
+             raise VisionError(
+                f"Cannot reach Ollama at {self.settings.ollama_url}. Is it running? ({error})",
+                code="ollama_down",
             ) from error
         names = {model.get("name", "") for model in response.json().get("models", [])}
         wanted = self.settings.model
         if wanted not in names and f"{wanted}:latest" not in names:
-            raise VisionError(f"Model '{wanted}' is not installed. Run: ollama pull {wanted}")
+            raise VisionError(
+                f"Model '{wanted}' is not installed. Run: ollama pull {wanted}",
+                code="model_missing",
+                model=wanted,
+            )
     
     
     def ask(self, prompt: str, schema: dict) -> dict:
@@ -172,7 +182,9 @@ class OllamaVision:
             response = self.client.get(f"{self.settings.ollama_url}/api/tags")
             response.raise_for_status()
         except httpx.HTTPError as error:
-            raise VisionError(f"Cannot reach Ollama at {self.settings.ollama_url}. ({error})") from error
+            raise VisionError(
+                f"Cannot reach Ollama at {self.settings.ollama_url}. ({error})", code="ollama_down"
+            ) from error
         found = []
         for model in response.json().get("models", []):
             name = model.get("name", "")
