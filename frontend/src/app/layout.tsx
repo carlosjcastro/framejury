@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { MotionSwitch } from "@/components/MotionSwitch";
+import { MOTION_BOOT_SCRIPT } from "@/lib/motion";
 import "./globals.css";
 
 const sans = Geist({
@@ -26,7 +28,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html
+      lang="en"
+      className={`${sans.variable} ${mono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT_SCRIPT }} />
+      </head>
       <body>
         <a href="#content" className="skip-link">
           Skip to content
@@ -48,13 +57,16 @@ export default function RootLayout({
               </svg>
               Framejury
             </div>
-            <p className="flex items-center gap-2 text-sm text-muted">
-              <span
-                aria-hidden="true"
-                className="size-2 rounded-full bg-keep"
-              />
-              Runs on your machine
-            </p>
+            <div className="flex items-center gap-2 sm:gap-4">
+              <p className="flex items-center gap-2 text-sm text-muted">
+                <span
+                  aria-hidden="true"
+                  className="size-2 rounded-full bg-keep"
+                />
+                Runs on your machine
+              </p>
+              <MotionSwitch />
+            </div>
           </div>
         </header>
         <div id="content">{children}</div>
