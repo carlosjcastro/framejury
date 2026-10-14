@@ -106,18 +106,60 @@ export interface XmpResult {
   missing: number;
 }
 
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  info: Record<string, unknown>;
+
+  constructor(
+    code: string,
+    message: string,
+    status = 0,
+    info: Record<string, unknown> = {},
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+    this.info = info;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+  } catch {
+    throw new ApiError("api_down", "The Framejury engine is not answering.");
+  }
   if (!response.ok) {
-    let detail = response.statusText;
+    let detail: unknown = response.statusText;
     try {
       detail = (await response.json()).detail ?? detail;
     } catch {}
-    throw new Error(detail);
+    if (
+      detail &&
+      typeof detail === "object" &&
+      !Array.isArray(detail) &&
+      "code" in detail
+    ) {
+      const { code, message, ...info } = detail as Record<string, unknown>;
+      throw new ApiError(
+        String(code),
+        String(message ?? ""),
+        response.status,
+        info,
+      );
+    }
+    const message =
+      typeof detail === "string"
+        ? detail
+        : "Some of the settings are not valid.";
+    throw new ApiError(`http_${response.status}`, message, response.status);
   }
   return response.json() as Promise<T>;
 }
