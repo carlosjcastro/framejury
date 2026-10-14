@@ -61,6 +61,14 @@ export interface Report {
   stats: Stats;
   groups: Group[];
   skipped: { name: string; error: string }[];
+  options?: {
+    recursive: boolean;
+    kinds: string[];
+    criteria: string[];
+    exclude: string[];
+    compared_selection: boolean;
+    selected_only: boolean;
+  };
 }
 
 export interface Job {
@@ -73,6 +81,8 @@ export interface Job {
   error?: string;
   current?: string;
   vision?: boolean;
+  folder?: string;
+  selected?: number | null;
 }
 
 export interface FolderExportResult {
@@ -102,11 +112,91 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function createJob(folder: string, lang: Lang, vision: boolean) {
+export interface Options {
+  model: string;
+  criteria: string[];
+  kinds: string[];
+  recursive: boolean;
+  exclude: string[];
+  group_gap_seconds: number;
+  group_hash_distance: number;
+  shortlist_size: number;
+  soft_ratio: number;
+}
+
+export type SliderKey =
+  | "group_gap_seconds"
+  | "group_hash_distance"
+  | "shortlist_size"
+  | "soft_ratio";
+
+export interface ConfigInfo {
+  defaults: Options;
+  bounds: Record<
+    SliderKey,
+    { min: number; max: number; step: number; label: string; hint: string }
+  >;
+  criteria: { id: string; label: string; hint: string; needs_model: boolean }[];
+  kinds: { id: string; label: string }[];
+}
+
+export interface ModelInfo {
+  name: string;
+  vision: boolean | null;
+}
+
+export interface ScanFile {
+  name: string;
+  folder: string;
+  kind: string;
+  size: number;
+}
+
+export interface ScanResult {
+  folder: string;
+  total: number;
+  truncated: boolean;
+  files: ScanFile[];
+}
+
+export interface JobPayload {
+  folder: string;
+  lang: Lang;
+  vision: boolean;
+  options: Options;
+  files?: string[];
+  compare_selected?: boolean;
+}
+
+function encodePath(name: string) {
+  return name.split("/").map(encodeURIComponent).join("/");
+}
+
+export function createJob(payload: JobPayload) {
   return request<{ id: string }>("/jobs", {
     method: "POST",
-    body: JSON.stringify({ folder, lang, vision }),
+    body: JSON.stringify(payload),
   });
+}
+
+export function getConfig() {
+  return request<ConfigInfo>("/config");
+}
+
+export function getModels() {
+  return request<{ models: ModelInfo[] }>("/models");
+}
+
+export function scanFolder(folder: string, options: Options) {
+  return request<ScanResult>("/scan", {
+    method: "POST",
+    body: JSON.stringify({ folder, options }),
+  });
+}
+
+export function scanThumbUrl(folder: string, name: string, size = 240) {
+  const query = new URLSearchParams({ folder, name, size: String(size) });
+  return `${API_URL}/scan/thumb?${query.toString()}`;
 }
 
 export function getJob(id: string) {
@@ -114,14 +204,14 @@ export function getJob(id: string) {
 }
 
 export function setStatus(jobId: string, name: string, status: Status) {
-  return request<Photo>(`/jobs/${jobId}/photos/${encodeURIComponent(name)}`, {
+  return request<Photo>(`/jobs/${jobId}/photos/${encodePath(name)}`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
 }
 
 export function thumbUrl(jobId: string, name: string, size = 480) {
-  return `${API_URL}/jobs/${jobId}/thumb/${encodeURIComponent(name)}?size=${size}`;
+  return `${API_URL}/jobs/${jobId}/thumb/${encodePath(name)}?size=${size}`;
 }
 
 export function csvUrl(jobId: string) {
@@ -144,4 +234,11 @@ export function exportFolders(
 
 export function exportXmp(jobId: string) {
   return request<XmpResult>(`/jobs/${jobId}/export/xmp`, { method: "POST" });
+}
+
+export function setManyStatus(jobId: string, names: string[], status: Status) {
+  return request<{ changed: number }>(`/jobs/${jobId}/photos/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ names, status }),
+  });
 }
