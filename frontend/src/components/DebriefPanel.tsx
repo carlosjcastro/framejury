@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createSummary, type Summary } from "@/lib/api";
+import { prefersReducedMotion } from "@/lib/motion";
 
 const PHRASES = [
   "Reading the results",
@@ -10,13 +11,6 @@ const PHRASES = [
   "Choosing what to suggest",
   "Writing the note",
 ];
-
-function prefersReducedMotion() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
 
 function Thinking() {
   const [index, setIndex] = useState(0);
