@@ -71,6 +71,15 @@ export interface Report {
   };
 }
 
+export interface Summary {
+  summary: string;
+  double_check: string[];
+  tip: string;
+  source: "model" | "template";
+  model: string | null;
+  generated_at?: number;
+}
+
 export interface Job {
   id: string;
   status: "running" | "done" | "error";
