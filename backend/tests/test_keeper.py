@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageFilter
 
-from keeper.config import Settings
+from keeper.config import Settings, build_settings
 from keeper.grouping import group_photos
 from keeper.metrics import analyze_file, sharpness
 from keeper.pipeline import run, scan_folder, write_outputs
@@ -62,6 +62,14 @@ class FakeVision:
         return Verdict(obs, self.best_index, "best one", 0.1)
 
 
+def test_sharper_photo_beats_model_vote_when_gap_is_real():
+    from keeper.decision import _score
+    sharp = _score(1.0, Observation(1, 0, 4, 4, ""), [], False)
+    voted = _score(0.8125, Observation(1, 0, 4, 5, ""), [], True)
+    assert sharp > voted
+    assert sharp - voted < 5
+
+
 def build_folder(tmp_path):
     scene = make_scene(3)
     save(scene, tmp_path, "sharp.jpg", 1000)
@@ -74,7 +82,7 @@ def build_folder(tmp_path):
 
 def test_scan_ignores_non_images(tmp_path):
     build_folder(tmp_path)
-    names = [p.name for p in scan_folder(tmp_path)]
+    names = [rel for _, rel in scan_folder(tmp_path)]
     assert "notes.txt" not in names and "sharp.jpg" in names
 
 
@@ -88,7 +96,7 @@ def test_pipeline_with_fake_vision(tmp_path):
     assert status["sharp.jpg"] == "keep"
     assert status["blur.jpg"] == "reject"
     assert status["single.jpg"] == "keep"
-    assert len(vision.calls) == 2
+    assert len(vision.calls) == 3
 
 
 def test_pipeline_vision_failure_falls_back(tmp_path):
@@ -121,8 +129,9 @@ def test_closed_eyes_blocks_keeper_without_review_loss(tmp_path):
 
     class Eyes:
         def judge(self, paths, lang):
-            obs = [Observation(1, 1, 4, 4, "eyes closed"), Observation(1, 0, 4, 4, "fine")]
-            return Verdict(obs, 0, "a", 0.1)
+            obs = [Observation(1, 1 if p.endswith("a.jpg") else 0, 4, 4, "x") for p in paths]
+            best = next(i for i, p in enumerate(paths) if p.endswith("a.jpg"))
+            return Verdict(obs, best, "a", 0.1)
 
     report = run(folder, Settings(), Eyes())
     status = {p["name"]: p["status"] for g in report["groups"] for p in g["photos"]}
@@ -167,3 +176,181 @@ def test_check_missing_model():
         lambda r: httpx.Response(200, json={"models": [{"name": "other"}]})))
     with pytest.raises(VisionError):
         OllamaVision(Settings(), client=client).check()
+
+
+def test_missing_exif_ignores_time_gate(tmp_path):
+    scene = make_scene(8)
+    a = analyze_file(save(scene, tmp_path, "a.jpg", 1000))
+    b = analyze_file(save(scene.filter(ImageFilter.GaussianBlur(1)), tmp_path, "b.jpg", 9000))
+    assert not a.has_exif_time and not b.has_exif_time
+    assert len(group_photos([a, b], 12.0, 24)) == 1
+
+
+def sample_report(tmp_path):
+    scene = make_scene(4)
+    a = save(scene, tmp_path, "a.jpg", 1000)
+    b = save(scene.filter(ImageFilter.GaussianBlur(3)), tmp_path, "b.jpg", 1002)
+    (tmp_path / "a.xmp").write_text("existing")
+    return run(tmp_path, Settings(), None)
+
+
+def test_csv_export(tmp_path):
+    from keeper.export import to_csv
+    import csv as csvmod, io as iomod
+    report = sample_report(tmp_path)
+    rows = list(csvmod.DictReader(iomod.StringIO(to_csv(report))))
+    assert {r["file"] for r in rows} == {"a.jpg", "b.jpg"}
+    assert {r["decision"] for r in rows} == {"keep", "reject"}
+
+
+def test_folder_export_copies_companions_and_never_moves(tmp_path):
+    from keeper.export import export_folders
+    src = tmp_path / "src"
+    src.mkdir()
+    report = sample_report(src)
+    out = tmp_path / "out"
+    result = export_folders(report, out, include_rejects=False)
+    assert result["copied"]["keep"] == 1 and result["copied"]["reject"] == 0
+    assert (out / "Keep" / "a.jpg").exists() and (out / "Keep" / "a.xmp").exists()
+    assert (src / "a.jpg").exists() and (src / "b.jpg").exists()
+    again = export_folders(report, out)
+    assert (out / "Keep" / "a_2.jpg").exists()
+    with pytest.raises(ValueError):
+        export_folders(report, src)
+
+
+def test_xmp_is_valid_and_never_overwrites(tmp_path):
+    import xml.etree.ElementTree as ET
+    from keeper.export import write_xmp
+    report = sample_report(tmp_path)
+    result = write_xmp(report)
+    assert result["written"] == 1 and result["skipped_existing"] == 1
+    assert (tmp_path / "a.xmp").read_text() == "existing"
+    root = ET.fromstring((tmp_path / "b.xmp").read_text(encoding="utf-8").split("?>", 1)[1].rsplit("<?xpacket", 1)[0])
+    description = root.find(".//{http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description")
+    assert description.attrib["{http://ns.adobe.com/xap/1.0/}Label"] == "Red"
+    assert description.attrib["{http://ns.adobe.com/xap/1.0/}Rating"] == "-1"
+
+
+def test_raw_preferred_over_same_stem_jpeg_and_loaded_via_preview(tmp_path, monkeypatch):
+    from keeper import metrics
+    save(make_scene(6), tmp_path, "img1.jpg", 1000)
+    (tmp_path / "img1.nef").write_bytes(b"raw")
+    save(make_scene(7), tmp_path, "img2.jpg", 2000)
+    assert [rel for _, rel in scan_folder(tmp_path)] == ["img1.nef", "img2.jpg"]
+    monkeypatch.setattr(metrics, "_load_raw_preview", lambda path: make_scene(6))
+    info = analyze_file(tmp_path / "img1.nef")
+    assert info.name == "img1.nef" and info.sharpness > 0
+
+
+def test_raw_preview_orientation_with_fake_rawpy(tmp_path, monkeypatch):
+    import io as iomod, sys, types
+    from keeper import metrics
+
+    landscape = Image.new("RGB", (60, 40), "red")
+    data = iomod.BytesIO()
+    landscape.save(data, "JPEG")
+
+    class Fmt:
+        JPEG = 1
+        BITMAP = 2
+
+    class Err(Exception):
+        pass
+
+    class FakeRaw:
+        def __init__(self, flip):
+            self.sizes = types.SimpleNamespace(flip=flip)
+
+        def extract_thumb(self):
+            return types.SimpleNamespace(format=Fmt.JPEG, data=data.getvalue())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    fake = types.ModuleType("rawpy")
+    fake.ThumbFormat = Fmt
+    fake.LibRawError = fake.LibRawNoThumbnailError = fake.LibRawUnsupportedThumbnailError = Err
+    for flip, size in ((0, (60, 40)), (6, (40, 60)), (3, (60, 40))):
+        fake.imread = lambda path, f=flip: FakeRaw(f)
+        monkeypatch.setitem(sys.modules, "rawpy", fake)
+        assert metrics._load_raw_preview(tmp_path / "x.nef").size == size
+
+    monkeypatch.setitem(sys.modules, "rawpy", None)
+    with pytest.raises(RuntimeError, match="rawpy"):
+        metrics._load_raw_preview(tmp_path / "x.nef")
+
+
+def test_build_settings_clamps_and_validates():
+    base = Settings()
+    tuned = build_settings(base, {"shortlist_size": 99, "soft_ratio": 0.01, "criteria": ["sharpness"], "kinds": ["jpeg"]})
+    assert tuned.shortlist_size == 6 and tuned.soft_ratio == 0.3
+    assert tuned.criteria == {"sharpness"} and not tuned.uses_model()
+    assert tuned.extensions() == {".jpg", ".jpeg"}
+    for bad in ({"criteria": []}, {"criteria": ["nope"]}, {"kinds": ["gif"]}, {"model": " "}, {"group_gap_seconds": "x"}):
+        with pytest.raises(ValueError):
+            build_settings(base, bad)
+    assert build_settings(base, None) == base
+
+
+def test_scan_recursive_kinds_and_exclude(tmp_path):
+    scene = make_scene(11)
+    (tmp_path / "day1").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    save(scene, tmp_path, "top.jpg")
+    save(scene, tmp_path / "day1", "a.jpg")
+    save(scene, tmp_path / "day1", "IMG_draft.jpg")
+    save(scene, tmp_path / ".hidden", "h.jpg")
+    scene.save(tmp_path / "shot.png")
+    flat = [rel for _, rel in scan_folder(tmp_path, Settings())]
+    assert flat == ["shot.png", "top.jpg"]
+    deep = build_settings(Settings(), {"recursive": True, "exclude": ["*draft*"], "kinds": ["jpeg"]})
+    assert [rel for _, rel in scan_folder(tmp_path, deep)] == ["day1/a.jpg", "top.jpg"]
+    only_dir = build_settings(Settings(), {"recursive": True, "exclude": ["day1/*"]})
+    assert "day1/a.jpg" not in [rel for _, rel in scan_folder(tmp_path, only_dir)]
+
+
+def test_run_only_selection_and_single_group(tmp_path):
+    scene = make_scene(12)
+    save(scene, tmp_path, "a.jpg", 1000)
+    save(scene.filter(ImageFilter.GaussianBlur(3)), tmp_path, "b.jpg", 1002)
+    save(make_scene(55), tmp_path, "c.jpg", 90000)
+    report = run(tmp_path, Settings(), None, only=["a.jpg", "c.jpg"], single_group=True)
+    assert report["stats"]["photos"] == 2 and report["stats"]["groups"] == 1
+    assert report["options"]["selected_only"] and report["options"]["compared_selection"]
+    with pytest.raises(ValueError):
+        run(tmp_path, Settings(), None, only=["missing.jpg"])
+
+
+def test_disabled_criteria_are_not_judged(tmp_path):
+    scene = make_scene(13)
+    save(scene, tmp_path, "a.jpg", 1000)
+    save(scene.filter(ImageFilter.GaussianBlur(0.2)), tmp_path, "b.jpg", 1002)
+
+    class Eyes:
+        def judge(self, paths, lang):
+            obs = [Observation(1, 1 if p.endswith("a.jpg") else 0, 4, 4, "x") for p in paths]
+            return Verdict(obs, 0, "a", 0.1)
+
+    off = build_settings(Settings(), {"criteria": ["sharpness", "focus"]})
+    report = run(tmp_path, off, Eyes())
+    flags = {p["name"]: p["flags"] for g in report["groups"] for p in g["photos"]}
+    assert "closed_eyes" not in flags["a.jpg"]
+    no_model = build_settings(Settings(), {"criteria": ["sharpness", "exposure"]})
+    assert run(tmp_path, no_model, Eyes())["model"] is None
+
+
+def test_models_listing_flags_vision(tmp_path):
+    def handler(request: httpx.Request):
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "llama3"}, {"name": "gemma4:e4b-it-qat"}]})
+        name = json.loads(request.content)["model"]
+        return httpx.Response(200, json={"capabilities": ["completion", "vision"] if "gemma" in name else ["completion"]})
+
+    vision = OllamaVision(Settings(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    listed = vision.models()
+    assert listed[0] == {"name": "gemma4:e4b-it-qat", "vision": True}
+    assert listed[1]["vision"] is False
