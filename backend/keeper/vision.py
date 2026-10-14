@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from click import prompt
 import httpx
 
 from .config import Settings
@@ -128,6 +129,7 @@ class OllamaVision:
         self.client = client or httpx.Client(timeout=settings.request_timeout)
         self.attempts = attempts
 
+
     def check(self) -> None:
         try:
             response = self.client.get(f"{self.settings.ollama_url}/api/tags")
@@ -140,6 +142,28 @@ class OllamaVision:
         wanted = self.settings.model
         if wanted not in names and f"{wanted}:latest" not in names:
             raise VisionError(f"Model '{wanted}' is not installed. Run: ollama pull {wanted}")
+    
+    
+    def ask(self, prompt: str, schema: dict) -> dict:
+        """Text-only question with a structured answer."""
+        payload = {
+            "model": self.settings.model,
+            "stream": False,
+            "think": False,
+            "format": schema,
+            "keep_alive": self.settings.keep_alive,
+            "options": {"temperature": 0.2},
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        last_error: Exception | None = None
+        for _ in range(self.attempts):
+            try:
+                response = self.client.post(f"{self.settings.ollama_url}/api/chat", json=payload)
+                response.raise_for_status()
+                return json.loads(response.json()["message"]["content"])
+            except (httpx.HTTPError, KeyError, ValueError) as error:
+                last_error = error
+        raise VisionError(f"Unusable model response: {last_error}")
         
         
     def models(self) -> list[dict]:
