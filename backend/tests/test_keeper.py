@@ -174,8 +174,20 @@ def test_ollama_payload_and_check(tmp_path):
 def test_check_missing_model():
     client = httpx.Client(transport=httpx.MockTransport(
         lambda r: httpx.Response(200, json={"models": [{"name": "other"}]})))
-    with pytest.raises(VisionError):
+    with pytest.raises(VisionError) as caught:
         OllamaVision(Settings(), client=client).check()
+    assert caught.value.code == "model_missing"
+    assert caught.value.model == Settings().model
+
+
+def test_check_ollama_down():
+    def refuse(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(refuse))
+    with pytest.raises(VisionError) as caught:
+        OllamaVision(Settings(), client=client).check()
+    assert caught.value.code == "ollama_down"
 
 
 def test_missing_exif_ignores_time_gate(tmp_path):
