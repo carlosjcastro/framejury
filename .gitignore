@@ -14,7 +14,8 @@ __pycache__/
 # Datos generados por Framejury
 backend/data/
 backend/salida*/
-backend/keeper_out/
+framejury_out/
+framejury-export/
 
 # Node / Next.js
 node_modules/
@@ -36,6 +37,8 @@ fotos/
 *.png
 *.webp
 !frontend/public/**
+!frontend/src/**
+!docs/**
 
 # Sistema y editores
 .DS_Store
