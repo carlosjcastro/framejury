@@ -32,7 +32,7 @@ export function MotionSwitch() {
           ? "Animations are always on. Click to follow your system setting."
           : "Following your system setting. Click to always show animations."
       }
-      className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-sm text-muted hover:text-ink print:hidden"
+      className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-sm text-muted hover:text-ink print:hidden cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
     >
       <span
         aria-hidden="true"
