@@ -15,6 +15,7 @@ from .config import BOUNDS, CRITERIA, KIND_LABELS, Settings, build_settings
 from .export import export_folders, to_csv, write_xmp
 from .metrics import load_rgb
 from .pipeline import kind_of, run, scan_folder
+from .summary import summarize
 from .vision import OllamaVision, VisionError
 
 app = FastAPI(title="Framejury API", version=__version__)
@@ -354,6 +355,21 @@ def override_many(job_id: str, body: BulkOverride):
     _recount(report)
     _save(job)
     return {"changed": len(changed), "stats": report["stats"]}
+
+
+@app.post("/jobs/{job_id}/summary")
+def create_summary(job_id: str):
+    job = _job(job_id)
+    report = _report(job_id)
+    vision = None
+    if report.get("model"):
+        vision = OllamaVision(build_settings(Settings(), {"model": report["model"]}))
+    with RUN_LOCK:
+        result = summarize(report, vision, report.get("lang", "en"))
+    result["generated_at"] = time.time()
+    job["summary"] = result
+    _save(job)
+    return result
 
 
 @app.get("/jobs/{job_id}/export.csv")
