@@ -63,3 +63,13 @@ def test_validation_and_traversal(client, tmp_path):
     assert client.post("/jobs", json={"folder": str(tmp_path), "options": {"criteria": []}}).status_code == 400
     assert client.get("/scan/thumb", params={"folder": str(tmp_path), "name": "../etc/passwd"}).status_code == 404
     assert "bounds" in client.get("/config").json()
+    
+
+def test_summary_without_model_uses_template_and_is_saved(client, tmp_path):
+    scene = make_scene(23)
+    save(scene, tmp_path, "a.jpg", 1000)
+    save(scene.filter(ImageFilter.GaussianBlur(3)), tmp_path, "b.jpg", 1002)
+    job = wait(client, client.post("/jobs", json={"folder": str(tmp_path), "vision": False}).json()["id"])
+    result = client.post(f"/jobs/{job['id']}/summary")
+    assert result.status_code == 200 and result.json()["source"] == "template"
+    assert client.get(f"/jobs/{job['id']}").json()["summary"]["source"] == "template"
