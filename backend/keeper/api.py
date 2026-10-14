@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -18,20 +19,37 @@ from .pipeline import kind_of, run, scan_folder
 from .summary import summarize
 from .vision import OllamaVision, VisionError
 
-app = FastAPI(title="Framejury API", version=__version__)
+ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+DATA_DIR = Path("data")
+SCAN_LIMIT = 5000
+JOB_LIST_LIMIT = 50
+JOB_ID_LENGTH = 8
+THUMB_MIN_SIZE = 64
+THUMB_MAX_SIZE = 1600
+THUMB_QUALITY = 82
+THUMB_CACHE = "max-age=3600"
 
+Decision = Literal["keep", "reject", "review"]
+
+JOBS: dict[str, dict] = {}
+RUN_LOCK = threading.Lock()
+STORE_LOCK = threading.Lock()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    DATA_DIR.mkdir(exist_ok=True)
+    _load_all()
+    yield
+
+
+app = FastAPI(title="Framejury API", version=__version__, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-JOBS: dict[str, dict] = {}
-SCAN_LIMIT = 5000
-RUN_LOCK = threading.Lock()
 
 
 class Options(BaseModel):
@@ -64,12 +82,12 @@ class JobRequest(BaseModel):
 
 
 class Override(BaseModel):
-    status: Literal["keep", "reject", "review"]
+    status: Decision
 
 
 class BulkOverride(BaseModel):
     names: list[str]
-    status: Literal["keep", "reject", "review"]
+    status: Decision
 
 
 class FolderExport(BaseModel):
@@ -77,9 +95,20 @@ class FolderExport(BaseModel):
     include_rejects: bool = False
 
 
+def _problem(status: int, code: str, message: str, **extra) -> HTTPException:
+    return HTTPException(status, {"code": code, "message": message, **extra})
+
+
+def _vision_problem(error: VisionError) -> HTTPException:
+    return _problem(503, error.code, str(error), model=error.model)
+
+
 def _save(job: dict) -> None:
     path = DATA_DIR / f"{job['id']}.json"
-    path.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    temporary = path.with_suffix(".tmp")
+    with STORE_LOCK:
+        temporary.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(path)
 
 
 def _load_all() -> None:
@@ -94,12 +123,36 @@ def _load_all() -> None:
         JOBS[job["id"]] = job
 
 
-def _recount(report: dict) -> None:
-    counts = {"keep": 0, "reject": 0, "review": 0}
-    for group in report["groups"]:
-        for photo in group["photos"]:
-            counts[photo["status"]] += 1
-    report["stats"].update(counts)
+def _job(job_id: str) -> dict:
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+def _ready_report(job: dict) -> dict:
+    report = job.get("report")
+    if not report:
+        raise HTTPException(409, "Job has no report yet")
+    return report
+
+
+def _report(job_id: str) -> dict:
+    return _ready_report(_job(job_id))
+
+
+def _settings(options: Options) -> Settings:
+    try:
+        return build_settings(Settings(), options.as_dict())
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+
+
+def _require_folder(folder: str) -> Path:
+    path = Path(folder)
+    if not path.is_dir():
+        raise _problem(400, "folder_missing", f"Folder not found: {folder}", folder=folder)
+    return path
 
 
 def _find_photo(job: dict, name: str) -> str | None:
@@ -110,40 +163,64 @@ def _find_photo(job: dict, name: str) -> str | None:
     return None
 
 
-def _job(job_id: str) -> dict:
-    job = JOBS.get(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    return job
+def _recount(report: dict) -> None:
+    counts = {"keep": 0, "reject": 0, "review": 0}
+    for group in report["groups"]:
+        for photo in group["photos"]:
+            counts[photo["status"]] += 1
+    report["stats"].update(counts)
 
 
-def _report(job_id: str) -> dict:
-    report = _job(job_id).get("report")
-    if not report:
-        raise HTTPException(409, "Job has no report yet")
-    return report
+def _apply(report: dict, names: set[str], status: Decision) -> list[dict]:
+    changed = []
+    for group in report["groups"]:
+        for photo in group["photos"]:
+            if photo["name"] in names:
+                photo.setdefault("auto_status", photo["status"])
+                photo["status"] = status
+                photo["manual"] = status != photo["auto_status"]
+                changed.append(photo)
+    return changed
 
 
-def _settings(options: Options) -> Settings:
+def _override(job_id: str, names: set[str], status: Decision) -> tuple[dict, list[dict]]:
+    job = _job(job_id)
+    report = _ready_report(job)
+    changed = _apply(report, names, status)
+    if changed:
+        _recount(report)
+        _save(job)
+    return report, changed
+
+
+def _jpeg(path: str | Path, size: int) -> Response:
     try:
-        return build_settings(Settings(), options.as_dict())
-    except ValueError as error:
-        raise HTTPException(400, str(error))
-
-
-def _jpeg(path, size: int) -> Response:
-    image = load_rgb(path)
-    image.thumbnail((max(64, min(size, 1600)),) * 2)
+        image = load_rgb(path)
+    except Exception as error:
+        raise HTTPException(422, f"Cannot read this photo: {error}")
+    side = max(THUMB_MIN_SIZE, min(size, THUMB_MAX_SIZE))
+    image.thumbnail((side, side))
     buffer = io.BytesIO()
-    image.save(buffer, "JPEG", quality=82)
+    image.save(buffer, "JPEG", quality=THUMB_QUALITY)
     return Response(
         buffer.getvalue(),
         media_type="image/jpeg",
-        headers={"Cache-Control": "max-age=3600"},
+        headers={"Cache-Control": THUMB_CACHE},
     )
 
 
-def _run_job(job_id: str, request: JobRequest, settings: Settings) -> None:
+def _job_row(job: dict) -> dict:
+    report = job.get("report") or {}
+    return {
+        "id": job["id"],
+        "status": job["status"],
+        "folder": job.get("folder") or report.get("folder"),
+        "created_at": job.get("created_at"),
+        "stats": report.get("stats"),
+    }
+
+
+def _run_job(job_id: str, request: JobRequest, settings: Settings, use_model: bool) -> None:
     job = JOBS[job_id]
 
     def progress(stage: str, done: int, total: int) -> None:
@@ -156,12 +233,10 @@ def _run_job(job_id: str, request: JobRequest, settings: Settings) -> None:
 
     with RUN_LOCK:
         try:
-            vision = OllamaVision(settings) if request.vision and settings.uses_model() else None
-            job["vision"] = vision is not None
             job["report"] = run(
                 request.folder,
                 settings,
-                vision,
+                OllamaVision(settings) if use_model else None,
                 lang=request.lang,
                 progress=progress,
                 note=note,
@@ -173,9 +248,6 @@ def _run_job(job_id: str, request: JobRequest, settings: Settings) -> None:
             job["status"] = "error"
             job["error"] = str(error)
     _save(job)
-
-
-_load_all()
 
 
 @app.get("/health")
@@ -209,26 +281,22 @@ def models():
     try:
         return {"models": OllamaVision(Settings()).models()}
     except VisionError as error:
-        raise HTTPException(503, str(error))
+        raise _vision_problem(error)
 
 
 @app.post("/scan")
 def scan(request: ScanRequest):
-    folder = Path(request.folder)
-    if not folder.is_dir():
-        raise HTTPException(400, f"Folder not found: {request.folder}")
-    settings = _settings(request.options)
-    items = scan_folder(folder, settings)
-    files = []
-    for path, name in items[:SCAN_LIMIT]:
-        files.append(
-            {
-                "name": name,
-                "folder": name.rsplit("/", 1)[0] if "/" in name else "",
-                "kind": kind_of(path),
-                "size": path.stat().st_size,
-            }
-        )
+    folder = _require_folder(request.folder)
+    items = scan_folder(folder, _settings(request.options))
+    files = [
+        {
+            "name": name,
+            "folder": name.rsplit("/", 1)[0] if "/" in name else "",
+            "kind": kind_of(path),
+            "size": path.stat().st_size,
+        }
+        for path, name in items[:SCAN_LIMIT]
+    ]
     return {
         "folder": str(folder.resolve()),
         "total": len(items),
@@ -243,57 +311,55 @@ def scan_thumb(folder: str, name: str, size: int = 240):
     target = (root / name).resolve()
     if root not in target.parents or not target.is_file():
         raise HTTPException(404, "Photo not found")
-    try:
-        return _jpeg(target, size)
-    except Exception as error:
-        raise HTTPException(422, f"Cannot read this photo: {error}")
+    return _jpeg(target, size)
 
 
 @app.post("/jobs", status_code=202)
 def create_job(request: JobRequest):
-    if not Path(request.folder).is_dir():
-        raise HTTPException(400, f"Folder not found: {request.folder}")
+    folder = _require_folder(request.folder)
     settings = _settings(request.options)
-    if request.files is not None and not request.files:
+    if request.files is None:
+        if not scan_folder(folder, settings):
+            raise _problem(
+                400,
+                "no_photos",
+                f"No photos found in {request.folder} with the current file types and filters.",
+                folder=request.folder,
+            )
+    elif not request.files:
         raise HTTPException(400, "Select at least one photo")
-    if request.compare_selected and request.files is not None and len(request.files) < 2:
+    elif request.compare_selected and len(request.files) < 2:
         raise HTTPException(400, "Pick at least two photos to compare")
-    if request.vision and settings.uses_model():
+
+    use_model = request.vision and settings.uses_model()
+    if use_model:
         try:
             OllamaVision(settings).check()
         except VisionError as error:
-            raise HTTPException(503, str(error))
-    job_id = uuid.uuid4().hex[:8]
+            raise _vision_problem(error)
+
+    job_id = uuid.uuid4().hex[:JOB_ID_LENGTH]
     JOBS[job_id] = {
         "id": job_id,
         "status": "running",
         "stage": "analyze",
         "done": 0,
         "total": 0,
-        "vision": request.vision and settings.uses_model(),
+        "vision": use_model,
         "folder": request.folder,
         "created_at": time.time(),
-        "selected": len(request.files) if request.files is not None else None,
+        "selected": None if request.files is None else len(request.files),
     }
-    threading.Thread(target=_run_job, args=(job_id, request, settings), daemon=True).start()
+    threading.Thread(
+        target=_run_job, args=(job_id, request, settings, use_model), daemon=True
+    ).start()
     return {"id": job_id}
 
 
 @app.get("/jobs")
 def list_jobs():
-    rows = []
-    for job in sorted(JOBS.values(), key=lambda j: j.get("created_at", 0), reverse=True):
-        stats = (job.get("report") or {}).get("stats")
-        rows.append(
-            {
-                "id": job["id"],
-                "status": job["status"],
-                "folder": job.get("folder") or (job.get("report") or {}).get("folder"),
-                "created_at": job.get("created_at"),
-                "stats": stats,
-            }
-        )
-    return {"jobs": rows[:50]}
+    ordered = sorted(JOBS.values(), key=lambda job: job.get("created_at", 0), reverse=True)
+    return {"jobs": [_job_row(job) for job in ordered[:JOB_LIST_LIMIT]]}
 
 
 @app.get("/jobs/{job_id}")
@@ -303,8 +369,7 @@ def get_job(job_id: str):
 
 @app.delete("/jobs/{job_id}", status_code=204)
 def delete_job(job_id: str):
-    job = _job(job_id)
-    if job["status"] == "running":
+    if _job(job_id)["status"] == "running":
         raise HTTPException(409, "Wait for the analysis to finish")
     JOBS.pop(job_id, None)
     (DATA_DIR / f"{job_id}.json").unlink(missing_ok=True)
@@ -319,48 +384,24 @@ def thumbnail(job_id: str, name: str, size: int = 480):
     return _jpeg(path, size)
 
 
-def _apply(report: dict, names: set[str], status: str) -> list[dict]:
-    changed = []
-    for group in report["groups"]:
-        for photo in group["photos"]:
-            if photo["name"] in names:
-                photo.setdefault("auto_status", photo["status"])
-                photo["status"] = status
-                photo["manual"] = status != photo["auto_status"]
-                changed.append(photo)
-    return changed
-
-
 @app.patch("/jobs/{job_id}/photos/{name:path}")
 def override_photo(job_id: str, name: str, body: Override):
-    job = _job(job_id)
-    report = job.get("report")
-    if not report:
-        raise HTTPException(409, "Job has no report yet")
-    changed = _apply(report, {name}, body.status)
+    _, changed = _override(job_id, {name}, body.status)
     if not changed:
         raise HTTPException(404, "Photo not in this job")
-    _recount(report)
-    _save(job)
     return changed[0]
 
 
 @app.post("/jobs/{job_id}/photos/bulk")
 def override_many(job_id: str, body: BulkOverride):
-    job = _job(job_id)
-    report = job.get("report")
-    if not report:
-        raise HTTPException(409, "Job has no report yet")
-    changed = _apply(report, set(body.names), body.status)
-    _recount(report)
-    _save(job)
+    report, changed = _override(job_id, set(body.names), body.status)
     return {"changed": len(changed), "stats": report["stats"]}
 
 
 @app.post("/jobs/{job_id}/summary")
 def create_summary(job_id: str):
     job = _job(job_id)
-    report = _report(job_id)
+    report = _ready_report(job)
     vision = None
     if report.get("model"):
         vision = OllamaVision(build_settings(Settings(), {"model": report["model"]}))
