@@ -220,7 +220,7 @@ const STEPS: Step[] = [
 
 export function HowItDecides() {
   return (
-    <section aria-labelledby="how" className="mt-24 border-t border-line pt-16">
+    <section aria-labelledby="how" className="mt-24 border-line pt-16">
       <p className="font-mono text-xs uppercase tracking-[0.18em] text-accent">
         How it decides
       </p>
