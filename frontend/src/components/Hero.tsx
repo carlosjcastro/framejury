@@ -13,6 +13,8 @@ const SIGNALS = [
   },
 ];
 
+const BOTTOM_FADE = "linear-gradient(180deg, #000 55%, transparent 100%)";
+
 interface HeroProps {
   children: ReactNode;
   still: boolean;
@@ -24,6 +26,7 @@ export function Hero({ children, still }: HeroProps) {
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10"
+        style={{ maskImage: BOTTOM_FADE, WebkitMaskImage: BOTTOM_FADE }}
       >
         <div className="aurora aurora-a -left-[8%] -top-[18rem] size-[46rem] bg-[radial-gradient(closest-side,rgba(61,214,245,0.16),transparent)]" />
         <div className="aurora aurora-b -right-[6%] -top-[6rem] size-[40rem] bg-[radial-gradient(closest-side,rgba(52,211,153,0.1),transparent)]" />
