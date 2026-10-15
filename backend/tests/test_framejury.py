@@ -147,6 +147,31 @@ def test_parse_response_validation():
         parse_response("nope", 1)
     with pytest.raises(VisionError):
         parse_response(good, 2)
+        
+        
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The second image offers superior technical quality.",
+        "Both images are technically very similar, but the first one appears slightly sharper.",
+        "The image is slightly darker overall compared to the second version.",
+        "La segunda foto tiene mejor enfoque.",
+        "Photo 2 is sharper.",
+    ],
+)
+def test_positional_references_are_dropped(text):
+    payload = json.dumps({"photos": [{"index": 1, "people": 1, "closed_eyes": 0, "expression": 4, "subject_focus": 4, "note": text}],
+                          "best": 1, "best_reason": text})
+    obs, _, reason = parse_response(payload, 1)
+    assert obs[0].note == "" and reason == ""
+
+
+def test_plain_descriptions_are_kept():
+    text = "The subject's face is sharp and the lighting is even."
+    payload = json.dumps({"photos": [{"index": 1, "people": 1, "closed_eyes": 0, "expression": 4, "subject_focus": 4, "note": text}],
+                          "best": 1, "best_reason": text})
+    obs, _, reason = parse_response(payload, 1)
+    assert obs[0].note == text and reason == text
 
 
 def test_ollama_payload_and_check(tmp_path):

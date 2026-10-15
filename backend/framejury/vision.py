@@ -3,12 +3,12 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from click import prompt
 import httpx
 
 from .config import Settings
@@ -91,12 +91,36 @@ def build_prompt(count: int, lang: str) -> str:
         "closed_eyes (how many visible people have their eyes closed or mid-blink, 0 if none); "
         "expression (1 to 5, where 1 is awkward or mid-word and 5 is natural and flattering); "
         "subject_focus (1 to 5, how crisp the main subject's face is, where 1 is clearly out of focus or motion blurred); "
-        f"note (one short factual sentence in {language} about the most important defect or difference). "
-        f"Then give best, the number of the photo you would keep, and best_reason, one sentence in {language}. "
+        f"note (one short factual sentence in {language} about the most important defect of that photo, "
+        "or its best quality if it has no defect). "
+        f"Then give best, the number of the photo you would keep, and best_reason, one sentence in {language} "
+        "that says what is good about the chosen photo. "
         "If the photos are almost the same, decide on small differences in eyes, expression and focus. "
         "Do not value artistic mood over technical quality. "
-        "In note and best_reason never refer to photos by number or position; describe what is visible instead."
+        "In note and best_reason never refer to photos by number or position and never compare one photo "
+        'with another, so do not use words such as "first", "second", "other" or "both". '
+        "Describe only what is visible in the photo itself."
     )
+
+
+_POSITION = re.compile(
+    r"\b(?:first|second|third|fourth|fifth|other|another)\s+(?:image|photo|picture|shot|frame|one|version)\b"
+    r"|\b(?:both|all)\s+(?:the\s+)?(?:images|photos|pictures|shots|frames)\b"
+    r"|\b(?:image|photo|picture|shot|frame)\s+#?\d\b"
+    r"|\b(?:primera|segunda|tercera|cuarta|quinta|otra)\s+(?:imagen|foto|toma|versi[oó]n)\b"
+    r"|\b(?:ambas|las dos)\s+(?:im[aá]genes|fotos|tomas)\b"
+    r"|\b(?:imagen|foto|toma)\s+#?\d\b",
+    re.IGNORECASE,
+)
+
+
+def refers_to_position(text: str) -> bool:
+    """True when the model points at a photo by order ("the second image"), which means nothing to a reader."""
+    return bool(_POSITION.search(text))
+
+
+def _readable(text: str) -> str:
+    return "" if refers_to_position(text) else text
 
 
 def _clamp(value: object, low: int, high: int) -> int:
@@ -119,12 +143,12 @@ def parse_response(content: str, count: int) -> tuple[list[Observation], int, st
                     closed_eyes=_clamp(entry["closed_eyes"], 0, 50),
                     expression=_clamp(entry["expression"], 1, 5),
                     subject_focus=_clamp(entry["subject_focus"], 1, 5),
-                    note=str(entry["note"]).strip(),
+                    note=_readable(str(entry["note"]).strip()),
                 )
             )
         best = _clamp(data["best"], 1, count) - 1
-        return observations, best, str(data["best_reason"]).strip()
-    except (KeyError, ValueError, TypeError, json.JSONDecodeError) as error:
+        return observations, best, _readable(str(data["best_reason"]).strip())
+    except (KeyError, ValueError, TypeError) as error:
         raise VisionError(f"Unusable model response: {error}") from error
 
 
@@ -134,13 +158,12 @@ class OllamaVision:
         self.client = client or httpx.Client(timeout=settings.request_timeout)
         self.attempts = attempts
 
-
     def check(self) -> None:
         try:
             response = self.client.get(f"{self.settings.ollama_url}/api/tags")
             response.raise_for_status()
         except httpx.HTTPError as error:
-             raise VisionError(
+            raise VisionError(
                 f"Cannot reach Ollama at {self.settings.ollama_url}. Is it running? ({error})",
                 code="ollama_down",
             ) from error
@@ -152,8 +175,7 @@ class OllamaVision:
                 code="model_missing",
                 model=wanted,
             )
-    
-    
+
     def ask(self, prompt: str, schema: dict) -> dict:
         """Text-only question with a structured answer."""
         payload = {
@@ -174,8 +196,7 @@ class OllamaVision:
             except (httpx.HTTPError, KeyError, ValueError) as error:
                 last_error = error
         raise VisionError(f"Unusable model response: {last_error}")
-        
-        
+
     def models(self) -> list[dict]:
         """Installed models with their capabilities, vision-capable ones flagged."""
         try:
@@ -197,7 +218,6 @@ class OllamaVision:
                 pass
             found.append({"name": name, "vision": vision})
         return sorted(found, key=lambda m: (m["vision"] is not True, m["name"]))
-    
 
     def judge(self, paths: list[str], lang: str) -> Verdict:
         images = [encode_image(path, self.settings.vision_max_side) for path in paths]
@@ -208,9 +228,7 @@ class OllamaVision:
             "format": SCHEMA,
             "keep_alive": self.settings.keep_alive,
             "options": {"temperature": 0},
-            "messages": [
-                {"role": "user", "content": build_prompt(len(paths), lang), "images": images}
-            ],
+            "messages": [{"role": "user", "content": build_prompt(len(paths), lang), "images": images}],
         }
         last_error: Exception | None = None
         for _ in range(self.attempts):
@@ -221,8 +239,6 @@ class OllamaVision:
                 content = response.json()["message"]["content"]
                 observations, best, reason = parse_response(content, len(paths))
                 return Verdict(observations, best, reason, time.perf_counter() - started)
-            except (httpx.HTTPError, KeyError, ValueError) as error:
-                last_error = error
-            except VisionError as error:
+            except (httpx.HTTPError, KeyError, ValueError, VisionError) as error:
                 last_error = error
         raise VisionError(str(last_error))
