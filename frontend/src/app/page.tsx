@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AdvancedOptions } from "@/components/AdvancedOptions";
+import { Hero } from "@/components/Hero";
 import { HowItDecides } from "@/components/HowItDecides";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { ProblemNotice } from "@/components/ProblemNotice";
@@ -206,47 +207,28 @@ export default function Home() {
   }
 
   return (
-    <main className="relative overflow-hidden">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(60%_60%_at_50%_0%,rgba(61,214,245,0.14),transparent)]"
-      />
-      <div className="relative mx-auto max-w-6xl px-4 pb-24 pt-16 sm:px-6 sm:pt-24">
-        <h1 className="reveal max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-balance sm:text-6xl">
-          Cull event photos in minutes. Locally.
-        </h1>
-        <p
-          className="reveal mt-5 max-w-xl text-lg text-muted"
-          style={{ animationDelay: "90ms" }}
-        >
-          Framejury finds the best shot of every burst and tells you why. Your
-          photos never leave your computer.
-        </p>
-
-        <form
-          onSubmit={submit}
-          className="reveal mt-10 max-w-3xl"
-          style={{ animationDelay: "180ms" }}
-        >
+    <main>
+      <form onSubmit={submit}>
+        <Hero still={running}>
           <label htmlFor="folder" className="block text-sm font-medium">
             Photo folder
           </label>
-          <div className="mt-2 flex flex-col gap-3 sm:flex-row">
-            <input
-              id="folder"
-              value={folder}
-              onChange={(e) => setFolder(e.target.value)}
-              placeholder="C:\photos\wedding"
-              required
-              autoComplete="off"
-              spellCheck={false}
-              aria-describedby="folder-help"
-              className="field font-mono"
-            />
+          <input
+            id="folder"
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            placeholder="C:\photos\wedding"
+            required
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby="folder-help"
+            className="field mt-2 font-mono"
+          />
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
             <button
               type="submit"
               disabled={unavailable}
-              className="btn btn-primary btn-lg shrink-0"
+              className="btn btn-primary btn-lg"
             >
               {running ? "Analyzing…" : "Analyze folder"}
             </button>
@@ -254,12 +236,12 @@ export default function Home() {
               type="button"
               onClick={choosePhotos}
               disabled={unavailable}
-              className="btn btn-secondary btn-lg shrink-0"
+              className="btn btn-secondary btn-lg"
             >
               Choose photos
             </button>
           </div>
-          <p id="folder-help" className="mt-2 text-sm text-muted">
+          <p id="folder-help" className="mt-3 text-sm text-muted">
             Start with a folder of JPEG or RAW files and paste its full path.
             Analysis only reads your photos, and nothing changes until you
             export.
@@ -275,51 +257,57 @@ export default function Home() {
               onDismiss={() => setError(null)}
             />
           )}
+        </Hero>
 
-          <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
-            <label className="flex min-h-11 items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={vision}
-                onChange={(e) => setVision(e.target.checked)}
-                className="size-5 accent-[var(--accent)]"
-              />
-              Use the vision model (slower, more precise)
-            </label>
-            <div className="flex items-center gap-3">
-              <label htmlFor="lang" className="text-sm">
-                Reasons in
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="max-w-3xl">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+              <label className="flex min-h-11 items-center gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={vision}
+                  onChange={(e) => setVision(e.target.checked)}
+                  className="size-5 accent-[var(--accent)]"
+                />
+                Use the vision model (slower, more precise)
               </label>
-              <select
-                id="lang"
-                value={lang}
-                onChange={(e) => setLang(e.target.value as Lang)}
-                className="field !min-h-11 !w-auto"
-              >
-                <option value="en">English</option>
-                <option value="es">Español</option>
-              </select>
+              <div className="flex items-center gap-3">
+                <label htmlFor="lang" className="text-sm">
+                  Reasons in
+                </label>
+                <select
+                  id="lang"
+                  value={lang}
+                  onChange={(e) => setLang(e.target.value as Lang)}
+                  className="field !min-h-11 !w-auto"
+                >
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                </select>
+              </div>
             </div>
+
+            {options && (
+              <Readiness
+                vision={vision}
+                model={options.model}
+                onWithoutModel={() => setVision(false)}
+              />
+            )}
+
+            {config && options && (
+              <AdvancedOptions
+                config={config}
+                value={options}
+                onChange={updateOptions}
+                vision={vision}
+              />
+            )}
           </div>
+        </div>
+      </form>
 
-          {options && (
-            <Readiness
-              vision={vision}
-              model={options.model}
-              onWithoutModel={() => setVision(false)}
-            />
-          )}
-
-          {config && options && (
-            <AdvancedOptions
-              config={config}
-              value={options}
-              onChange={updateOptions}
-              vision={vision}
-            />
-          )}
-        </form>
-
+      <div className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
         {scan && options && !running && (
           <PhotoPicker
             scan={scan}

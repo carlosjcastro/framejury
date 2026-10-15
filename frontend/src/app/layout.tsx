@@ -59,7 +59,7 @@ export default function RootLayout({
               Framejury
             </div>
             <div className="flex items-center gap-2 sm:gap-4">
-              <p className="flex items-center gap-2 text-sm text-muted">
+              <p className="hidden items-center gap-2 text-sm text-muted sm:flex">
                 <span
                   aria-hidden="true"
                   className="size-2 rounded-full bg-keep"
