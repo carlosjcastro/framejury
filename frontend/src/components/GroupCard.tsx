@@ -3,6 +3,8 @@ import { FILL, LABEL, StatusChip, StatusIcon, TEXT } from "./StatusChip";
 
 const ORDER: Status[] = ["keep", "review", "reject"];
 
+const NOT_SCORED = -1000;
+
 function Corners({ status }: { status: Status }) {
   if (status === "reject") return null;
   const line = status === "review" ? "border-dotted" : "border-solid";
@@ -148,8 +150,12 @@ export function GroupCard({
                           </dd>
                           <dt className="text-muted">Expression</dt>
                           <dd className="tabular-nums">{obs.expression} / 5</dd>
-                          <dt className="text-muted">Model note</dt>
-                          <dd>{obs.note}</dd>
+                          {obs.note && (
+                            <>
+                              <dt className="text-muted">Model note</dt>
+                              <dd>{obs.note}</dd>
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
@@ -158,7 +164,11 @@ export function GroupCard({
                         </>
                       )}
                       <dt className="text-muted">Decision score</dt>
-                      <dd className="tabular-nums">{photo.score}</dd>
+                      <dd className="tabular-nums">
+                        {photo.score <= NOT_SCORED
+                          ? "Not scored, rejected before comparing"
+                          : photo.score}
+                      </dd>
                     </dl>
                   </details>
 
