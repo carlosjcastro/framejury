@@ -2,6 +2,17 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "description": "Web interface for Framejury, a local photo culling tool for event photographers.",
+  "author": {
+    "name": "Carlos José Castro Galante",
+    "url": "https://github.com/carlosjcastro"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carlosjcastro/framejury.git",
+    "directory": "frontend"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
