@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "framejury"
+description = "Local photo culling for event photographers. Groups near identical shots and explains every decision."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Carlos José Castro Galante" }]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/carlosjcastro/framejury"
+
+[tool.setuptools.dynamic]
+version = { attr = "framejury.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["framejury*"]
