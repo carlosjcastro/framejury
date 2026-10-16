@@ -67,14 +67,6 @@ app.add_middleware(
 )
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 class Options(BaseModel):
     model: str | None = None
     criteria: list[str] | None = None
