@@ -1,3 +1,5 @@
+![Framejury, local photo culling that explains every decision](docs/framejury-banner.png)
+
 # Framejury
 
 Framejury is a photo culling tool for event photographers that looks through a folder of photos, groups the shots that are nearly identical, picks the best one of each group and explains the choice in words you can read, check against the evidence and change with a single click. Everything runs on your own computer, which means your photos are never uploaded anywhere and the vision model that compares them runs locally through Ollama.
