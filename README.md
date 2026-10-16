@@ -2,6 +2,12 @@
 
 Framejury is a photo culling tool for event photographers that looks through a folder of photos, groups the shots that are nearly identical, picks the best one of each group and explains the choice in words you can read, check against the evidence and change with a single click. Everything runs on your own computer, which means your photos are never uploaded anywhere and the vision model that compares them runs locally through Ollama.
 
+## Demo
+
+A minute and a half with captions and no sound needed. [Watch it on YouTube](https://youtu.be/XVh0xfndIb4).
+
+Sample photos in the demo are by Trougnouf (Benoit Brummer), from the 2023 ULB graduation ceremony, via Wikimedia Commons, under CC BY-SA 4.0.
+
 ## Why Framejury exists
 
 After a wedding, a concert or a company event, a photographer comes home with thousands of frames, and a large share of them are bursts of the same moment, so choosing the good one becomes a slow, repetitive and tiring task that clients never see and rarely pay for directly, which makes every hour of it expensive.
@@ -167,6 +173,12 @@ The tests for the engine run with `python -m pytest` from the backend folder and
 The interface uses Next.js, React, TypeScript and Tailwind CSS, the engine uses Python, FastAPI, Uvicorn, OpenCV, Pillow, NumPy and rawpy, and the judgment step uses Gemma 4 served locally by Ollama, which is released under the Apache 2.0 license according to its model card.
 
 Framejury was built for the DEV Hacktoberfest Open Source AI Challenge, in the Side Hustle week.
+
+## Changes after the contest deadline
+
+Framejury was built during the entry period of the DEV Hacktoberfest Open Source AI Challenge, which closed on October 18, 2026 at 11:59 PM PDT. Any commit made after that moment is listed here, so that the version that was submitted can be told apart from later work.
+
+No commits have been made after the deadline yet.
 
 ## License
 
