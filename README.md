@@ -1,4 +1,4 @@
-
+![Framejury, local photo culling that explains every decision](docs/framejury-banner.png)
 
 # Framejury
 
